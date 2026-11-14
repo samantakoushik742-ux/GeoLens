@@ -1,6 +1,39 @@
+
+# Backend API
 flask>=3.0.0
 flask-cors>=4.0.0
-numpy>=1.24.0
+werkzeug>=3.0.0
+
+# Deep Learning
 torch>=2.0.0
+torchvision>=0.15.0
+
+# Numerical processing
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Satellite image processing
 rasterio>=1.3.0
+fiona>=1.9.0
+shapely>=2.0.0
+pyproj>=3.5.0
 Pillow>=10.0.0
+
+# Data processing
+pandas>=2.0.0
+
+# Environment configuration
+python-dotenv>=1.0.0
+
+# HTTP requests
+requests>=2.31.0
+
+# Database connectivity
+SQLAlchemy>=2.0.0
+PyMySQL>=1.1.0
+
+# Image and geospatial utilities
+opencv-python-headless>=4.8.0
+
+# Production server
+gunicorn>=21.2.0
