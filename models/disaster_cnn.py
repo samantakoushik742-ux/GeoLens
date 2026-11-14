@@ -58,7 +58,7 @@ class TemporalDisasterCNN(nn.Module):
         disaster classification logits
     """
 
-    def __init__(self, in_channels=3, num_classes=5):
+    def __init__(self, in_channels=3, num_classes=3):
         super().__init__()
 
         self.encoder = CNNEncoder(in_channels)
@@ -118,7 +118,7 @@ if __name__ == "__main__":
 
     model = TemporalDisasterCNN(
         in_channels=3,
-        num_classes=5
+        num_classes=3
     ).to(device)
 
     historical = torch.randn(

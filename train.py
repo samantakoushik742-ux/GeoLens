@@ -1,11 +1,13 @@
+
 from pathlib import Path
 import random
+import json
 
 import numpy as np
 import torch
 import torch.nn as nn
 
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Subset
 
 from utils.dataset import TemporalSatelliteDataset
 from models.disaster_cnn import TemporalDisasterCNN
@@ -17,39 +19,45 @@ from models.disaster_cnn import TemporalDisasterCNN
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-DATA_DIR = (
-    PROJECT_ROOT /
-    "data" /
-    "processed"
-)
+DATA_DIR = PROJECT_ROOT / "data" / "processed"
 
-MODEL_DIR = (
-    PROJECT_ROOT /
-    "models"
-)
+MODEL_DIR = PROJECT_ROOT / "models"
 
-MODEL_PATH = (
-    MODEL_DIR /
-    "best_disaster_cnn.pth"
-)
+MODEL_PATH = MODEL_DIR / "best_multi_hazard_cnn.pth"
+
+HISTORY_PATH = MODEL_DIR / "training_history.json"
 
 
-# Training parameters
+# ============================================================
+# MULTI-HAZARD CLASSES
+# ============================================================
+
+EXPECTED_CLASSES = [
+    "vegetation",
+    "drought",
+    "flood"
+]
+
+
+# ============================================================
+# TRAINING PARAMETERS
+# ============================================================
+
 BATCH_SIZE = 8
-EPOCHS = 30
-LEARNING_RATE = 0.001
 
-# Validation percentage
+EPOCHS = 40
+
+LEARNING_RATE = 0.0005
+
+WEIGHT_DECAY = 0.0001
+
 VALIDATION_SPLIT = 0.20
 
-# Number of workers
 NUM_WORKERS = 0
 
-# Reproducibility
 SEED = 42
 
-# Early stopping
-PATIENCE = 7
+PATIENCE = 8
 
 
 # ============================================================
@@ -68,6 +76,10 @@ def set_seed(seed=SEED):
 
         torch.cuda.manual_seed_all(seed)
 
+    torch.backends.cudnn.deterministic = True
+
+    torch.backends.cudnn.benchmark = False
+
 
 # ============================================================
 # DEVICE
@@ -82,8 +94,7 @@ def get_device():
         print("\nGPU detected!")
 
         print(
-            f"GPU: "
-            f"{torch.cuda.get_device_name(0)}"
+            f"GPU: {torch.cuda.get_device_name(0)}"
         )
 
     else:
@@ -104,70 +115,176 @@ def get_device():
 def create_dataset():
 
     print("\n" + "=" * 70)
-    print("LOADING DATASET")
+
+    print("LOADING MULTI-HAZARD DATASET")
+
     print("=" * 70)
 
-    dataset = TemporalSatelliteDataset(
-        DATA_DIR
+    if not DATA_DIR.exists():
+
+        raise FileNotFoundError(
+            f"Processed dataset directory not found: {DATA_DIR}\n\n"
+            "Place raw GeoTIFF pairs in:\n"
+            "data/raw/<vegetation|drought|flood>/historical/\n"
+            "data/raw/<vegetation|drought|flood>/recent/\n\n"
+            "Then run:\n"
+            "python preprocessing/preprocess_dataset.py"
+        )
+
+    dataset = TemporalSatelliteDataset(DATA_DIR)
+
+    if len(dataset) == 0:
+
+        raise RuntimeError(
+            "Dataset is empty. Process satellite images first."
+        )
+
+    # --------------------------------------------------------
+    # Verify classes
+    # --------------------------------------------------------
+
+    class_names = list(dataset.class_names)
+
+    print("\nDetected classes:")
+
+    for name in class_names:
+
+        print(f"- {name}")
+
+    if set(class_names) != set(EXPECTED_CLASSES):
+
+        raise RuntimeError(
+            "\nDataset classes do not match the multi-hazard "
+            "configuration.\n"
+            f"Expected: {EXPECTED_CLASSES}\n"
+            f"Found: {class_names}"
+        )
+
+    print(
+        f"\nTotal samples: {len(dataset)}"
     )
 
     return dataset
 
 
 # ============================================================
-# TRAIN / VALIDATION SPLIT
+# STRATIFIED TRAIN / VALIDATION SPLIT
 # ============================================================
 
 def split_dataset(dataset):
 
-    total_size = len(dataset)
+    print("\n" + "=" * 70)
 
-    validation_size = int(
-        total_size *
-        VALIDATION_SPLIT
-    )
+    print("STRATIFIED DATASET SPLITTING")
 
-    training_size = (
-        total_size -
-        validation_size
-    )
+    print("=" * 70)
 
-    if validation_size == 0:
+    class_indices = {
+        i: []
+        for i in range(len(dataset.class_names))
+    }
 
-        raise RuntimeError(
-            "Dataset is too small for "
-            "a validation split."
-        )
+    # --------------------------------------------------------
+    # Group samples by class
+    # --------------------------------------------------------
 
-    train_dataset, validation_dataset = (
-        random_split(
-            dataset,
-            [
-                training_size,
-                validation_size
-            ],
-            generator=torch.Generator().manual_seed(
-                SEED
+    for index, sample in enumerate(dataset.samples):
+
+        label = int(sample[2])
+
+        if label not in class_indices:
+
+            raise ValueError(
+                f"Invalid label {label} at sample {index}"
             )
+
+        class_indices[label].append(index)
+
+    train_indices = []
+
+    validation_indices = []
+
+    rng = random.Random(SEED)
+
+    # --------------------------------------------------------
+    # Split each class separately
+    # --------------------------------------------------------
+
+    for class_id, indices in class_indices.items():
+
+        rng.shuffle(indices)
+
+        count = len(indices)
+
+        if count == 0:
+
+            raise RuntimeError(
+                f"No samples found for class: "
+                f"{dataset.class_names[class_id]}"
+            )
+
+        if count < 2:
+
+            raise RuntimeError(
+                f"Class {dataset.class_names[class_id]} "
+                "needs at least 2 samples for training "
+                "and validation."
+            )
+
+        validation_count = max(
+            1,
+            int(round(count * VALIDATION_SPLIT))
         )
+
+        validation_count = min(
+            validation_count,
+            count - 1
+        )
+
+        validation_indices.extend(
+            indices[:validation_count]
+        )
+
+        train_indices.extend(
+            indices[validation_count:]
+        )
+
+        print(
+            f"{dataset.class_names[class_id]:<15} "
+            f"Total: {count:<5} "
+            f"Train: {count - validation_count:<5} "
+            f"Validation: {validation_count}"
+        )
+
+    # --------------------------------------------------------
+    # Shuffle final indices
+    # --------------------------------------------------------
+
+    rng.shuffle(train_indices)
+
+    rng.shuffle(validation_indices)
+
+    train_dataset = Subset(
+        dataset,
+        train_indices
     )
 
-    print("\nDataset split:")
+    validation_dataset = Subset(
+        dataset,
+        validation_indices
+    )
+
+    print("\nFinal dataset split:")
 
     print(
-        f"Training samples: "
-        f"{len(train_dataset)}"
+        f"Training samples: {len(train_dataset)}"
     )
 
     print(
-        f"Validation samples: "
-        f"{len(validation_dataset)}"
+        f"Validation samples: {len(validation_dataset)}"
     )
 
-    return (
-        train_dataset,
-        validation_dataset
-    )
+    return train_dataset, validation_dataset
 
 
 # ============================================================
@@ -176,7 +293,8 @@ def split_dataset(dataset):
 
 def create_dataloaders(
     train_dataset,
-    validation_dataset
+    validation_dataset,
+    device
 ):
 
     train_loader = DataLoader(
@@ -184,7 +302,7 @@ def create_dataloaders(
         batch_size=BATCH_SIZE,
         shuffle=True,
         num_workers=NUM_WORKERS,
-        pin_memory=torch.cuda.is_available()
+        pin_memory=(device.type == "cuda")
     )
 
     validation_loader = DataLoader(
@@ -192,44 +310,38 @@ def create_dataloaders(
         batch_size=BATCH_SIZE,
         shuffle=False,
         num_workers=NUM_WORKERS,
-        pin_memory=torch.cuda.is_available()
+        pin_memory=(device.type == "cuda")
     )
 
-    return (
-        train_loader,
-        validation_loader
-    )
+    return train_loader, validation_loader
 
 
 # ============================================================
-# DETECT NUMBER OF CHANNELS
+# DETECT INPUT CHANNELS
 # ============================================================
 
 def detect_channels(dataset):
 
-    historical, recent, _ = dataset[0]
+    historical, recent, label = dataset[0]
 
-    historical_channels = (
-        historical.shape[0]
-    )
-
-    recent_channels = (
-        recent.shape[0]
-    )
-
-    if historical_channels != recent_channels:
+    if historical.ndim != 3 or recent.ndim != 3:
 
         raise RuntimeError(
-            "Historical and recent images "
-            "have different numbers of bands."
+            "Expected satellite images in CHW format."
         )
+
+    if historical.shape != recent.shape:
+
+        raise RuntimeError(
+            "Historical and recent images must have "
+            "identical dimensions."
+        )
+
+    channels = historical.shape[0]
 
     print("\nSatellite information:")
 
-    print(
-        f"Input channels/bands: "
-        f"{historical_channels}"
-    )
+    print(f"Input channels: {channels}")
 
     print(
         f"Image size: "
@@ -237,7 +349,9 @@ def detect_channels(dataset):
         f"{historical.shape[2]}"
     )
 
-    return historical_channels
+    print(f"Sample label: {label}")
+
+    return channels
 
 
 # ============================================================
@@ -245,86 +359,47 @@ def detect_channels(dataset):
 # ============================================================
 
 def calculate_class_weights(
-    dataset
+    dataset,
+    train_indices
 ):
-    """
-    Calculate inverse-frequency class weights.
 
-    This helps when some disaster classes have
-    considerably fewer samples than others.
-    """
-
-    num_classes = len(
-        dataset.class_names
-    )
+    num_classes = len(dataset.class_names)
 
     class_counts = np.zeros(
         num_classes,
         dtype=np.float32
     )
 
-    for _, _, label in dataset.samples:
+    # --------------------------------------------------------
+    # Count only training samples
+    # --------------------------------------------------------
+
+    for index in train_indices:
+
+        label = int(dataset.samples[index][2])
 
         class_counts[label] += 1
 
-    print("\nClass counts:")
+    print("\nTraining class distribution:")
 
-    for index, count in enumerate(
-        class_counts
-    ):
+    for index, count in enumerate(class_counts):
 
         print(
-            f"{dataset.class_names[index]:<12}: "
+            f"{dataset.class_names[index]:<15}: "
             f"{int(count)}"
         )
 
-    # --------------------------------------------------------
-    # Check for missing classes
-    # --------------------------------------------------------
-
     if np.any(class_counts == 0):
 
-        print(
-            "\nWARNING:"
+        raise RuntimeError(
+            "At least one class has no training samples."
         )
 
-        print(
-            "One or more classes contain "
-            "zero samples."
-        )
+    total_samples = class_counts.sum()
 
-        print(
-            "The model cannot learn a class "
-            "without training examples."
-        )
-
-    # --------------------------------------------------------
-    # Calculate weights
-    # --------------------------------------------------------
-
-    weights = np.zeros_like(
-        class_counts
+    weights = total_samples / (
+        num_classes * class_counts
     )
-
-    total_samples = np.sum(
-        class_counts
-    )
-
-    for i in range(num_classes):
-
-        if class_counts[i] > 0:
-
-            weights[i] = (
-                total_samples /
-                (
-                    num_classes *
-                    class_counts[i]
-                )
-            )
-
-        else:
-
-            weights[i] = 0.0
 
     return torch.tensor(
         weights,
@@ -352,15 +427,7 @@ def train_one_epoch(
 
     total = 0
 
-    for (
-        historical,
-        recent,
-        labels
-    ) in loader:
-
-        # ----------------------------------------------------
-        # Move data to GPU/CPU
-        # ----------------------------------------------------
+    for historical, recent, labels in loader:
 
         historical = historical.to(
             device,
@@ -378,23 +445,28 @@ def train_one_epoch(
         )
 
         # ----------------------------------------------------
-        # Clear gradients
-        # ----------------------------------------------------
-
-        optimizer.zero_grad()
-
-        # ----------------------------------------------------
         # Forward pass
         # ----------------------------------------------------
+
+        optimizer.zero_grad(set_to_none=True)
 
         outputs = model(
             historical,
             recent
         )
 
-        # ----------------------------------------------------
-        # Calculate loss
-        # ----------------------------------------------------
+        if outputs.ndim != 2:
+
+            raise RuntimeError(
+                "Model must return logits with shape [batch, classes]."
+            )
+
+        if outputs.shape[1] != len(EXPECTED_CLASSES):
+
+            raise RuntimeError(
+                "Model output class count does not match "
+                "the three hazard classes."
+            )
 
         loss = criterion(
             outputs,
@@ -407,10 +479,6 @@ def train_one_epoch(
 
         loss.backward()
 
-        # ----------------------------------------------------
-        # Update weights
-        # ----------------------------------------------------
-
         optimizer.step()
 
         # ----------------------------------------------------
@@ -419,38 +487,23 @@ def train_one_epoch(
 
         batch_size = labels.size(0)
 
-        running_loss += (
-            loss.item() *
-            batch_size
-        )
+        running_loss += loss.item() * batch_size
 
-        predictions = torch.argmax(
-            outputs,
-            dim=1
-        )
+        predictions = outputs.argmax(dim=1)
 
         correct += (
-            (predictions == labels)
-            .sum()
-            .item()
-        )
+            predictions == labels
+        ).sum().item()
 
         total += batch_size
 
-    epoch_loss = (
-        running_loss /
-        total
-    )
+    epoch_loss = running_loss / total
 
     epoch_accuracy = (
-        correct /
-        total
+        correct / total
     ) * 100
 
-    return (
-        epoch_loss,
-        epoch_accuracy
-    )
+    return epoch_loss, epoch_accuracy
 
 
 # ============================================================
@@ -472,17 +525,13 @@ def validate(
 
     total = 0
 
-    # --------------------------------------------------------
-    # No gradients required
-    # --------------------------------------------------------
+    all_predictions = []
+
+    all_labels = []
 
     with torch.no_grad():
 
-        for (
-            historical,
-            recent,
-            labels
-        ) in loader:
+        for historical, recent, labels in loader:
 
             historical = historical.to(
                 device,
@@ -499,13 +548,11 @@ def validate(
                 non_blocking=True
             )
 
-            # Forward
             outputs = model(
                 historical,
                 recent
             )
 
-            # Loss
             loss = criterion(
                 outputs,
                 labels
@@ -514,47 +561,77 @@ def validate(
             batch_size = labels.size(0)
 
             running_loss += (
-                loss.item() *
-                batch_size
+                loss.item() * batch_size
             )
 
-            # Predictions
-            predictions = torch.argmax(
-                outputs,
-                dim=1
-            )
+            predictions = outputs.argmax(dim=1)
 
             correct += (
-                (predictions == labels)
-                .sum()
-                .item()
-            )
+                predictions == labels
+            ).sum().item()
 
             total += batch_size
 
-    validation_loss = (
-        running_loss /
-        total
-    )
+            all_predictions.extend(
+                predictions.cpu().tolist()
+            )
+
+            all_labels.extend(
+                labels.cpu().tolist()
+            )
+
+    if total == 0:
+
+        raise RuntimeError(
+            "Validation dataset is empty."
+        )
+
+    validation_loss = running_loss / total
 
     validation_accuracy = (
-        correct /
-        total
+        correct / total
     ) * 100
 
     return (
         validation_loss,
-        validation_accuracy
+        validation_accuracy,
+        all_predictions,
+        all_labels
     )
 
 
 # ============================================================
-# SAVE MODEL
+# SAVE TRAINING HISTORY
+# ============================================================
+
+def save_history(history):
+
+    MODEL_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    with open(
+        HISTORY_PATH,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            history,
+            file,
+            indent=4
+        )
+
+
+# ============================================================
+# SAVE BEST MODEL
 # ============================================================
 
 def save_model(
     model,
     optimizer,
+    scheduler,
     epoch,
     validation_loss,
     validation_accuracy,
@@ -571,23 +648,27 @@ def save_model(
 
         "epoch": epoch,
 
-        "model_state_dict":
-            model.state_dict(),
+        "model_state_dict": model.state_dict(),
 
-        "optimizer_state_dict":
-            optimizer.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
 
-        "validation_loss":
-            validation_loss,
+        "scheduler_state_dict": scheduler.state_dict(),
 
-        "validation_accuracy":
-            validation_accuracy,
+        "validation_loss": validation_loss,
 
-        "input_channels":
-            input_channels,
+        "validation_accuracy": validation_accuracy,
 
-        "class_names":
-            class_names
+        "input_channels": input_channels,
+
+        "num_classes": len(class_names),
+
+        "class_names": class_names,
+
+        "image_size": 256,
+
+        "hazard_type": "multi_hazard",
+
+        "hazards": EXPECTED_CLASSES
     }
 
     torch.save(
@@ -596,8 +677,7 @@ def save_model(
     )
 
     print(
-        f"\nBest model saved to:"
-        f"\n{MODEL_PATH}"
+        f"\nBest model checkpoint saved:\n{MODEL_PATH}"
     )
 
 
@@ -606,10 +686,6 @@ def save_model(
 # ============================================================
 
 def main():
-
-    # --------------------------------------------------------
-    # Seed
-    # --------------------------------------------------------
 
     set_seed()
 
@@ -620,47 +696,24 @@ def main():
     device = get_device()
 
     # --------------------------------------------------------
-    # Dataset
+    # Load dataset
     # --------------------------------------------------------
 
     dataset = create_dataset()
 
     # --------------------------------------------------------
-    # Number of channels
+    # Input channels
     # --------------------------------------------------------
 
-    input_channels = (
-        detect_channels(
-            dataset
-        )
-    )
+    input_channels = detect_channels(dataset)
+
+    num_classes = len(dataset.class_names)
 
     # --------------------------------------------------------
-    # Number of classes
+    # Split dataset
     # --------------------------------------------------------
 
-    num_classes = len(
-        dataset.class_names
-    )
-
-    print(
-        f"Number of classes: "
-        f"{num_classes}"
-    )
-
-    print(
-        f"Classes: "
-        f"{dataset.class_names}"
-    )
-
-    # --------------------------------------------------------
-    # Split
-    # --------------------------------------------------------
-
-    (
-        train_dataset,
-        validation_dataset
-    ) = split_dataset(
+    train_dataset, validation_dataset = split_dataset(
         dataset
     )
 
@@ -668,20 +721,31 @@ def main():
     # DataLoaders
     # --------------------------------------------------------
 
-    (
-        train_loader,
-        validation_loader
-    ) = create_dataloaders(
+    train_loader, validation_loader = create_dataloaders(
         train_dataset,
-        validation_dataset
+        validation_dataset,
+        device
     )
 
     # --------------------------------------------------------
-    # Model
+    # Class weights
+    # --------------------------------------------------------
+
+    class_weights = calculate_class_weights(
+        dataset,
+        train_dataset.indices
+    )
+
+    class_weights = class_weights.to(device)
+
+    # --------------------------------------------------------
+    # Create model
     # --------------------------------------------------------
 
     print("\n" + "=" * 70)
-    print("CREATING TEMPORAL CNN")
+
+    print("CREATING MULTI-HAZARD TEMPORAL CNN")
+
     print("=" * 70)
 
     model = TemporalDisasterCNN(
@@ -689,30 +753,12 @@ def main():
         num_classes=num_classes
     )
 
-    model = model.to(
-        device
-    )
+    model = model.to(device)
 
-    print(
-        model
-    )
+    print(model)
 
     # --------------------------------------------------------
-    # Class weights
-    # --------------------------------------------------------
-
-    class_weights = (
-        calculate_class_weights(
-            dataset
-        )
-    )
-
-    class_weights = class_weights.to(
-        device
-    )
-
-    # --------------------------------------------------------
-    # Loss
+    # Loss function
     # --------------------------------------------------------
 
     criterion = nn.CrossEntropyLoss(
@@ -723,44 +769,49 @@ def main():
     # Optimizer
     # --------------------------------------------------------
 
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         model.parameters(),
-        lr=LEARNING_RATE
+        lr=LEARNING_RATE,
+        weight_decay=WEIGHT_DECAY
     )
 
     # --------------------------------------------------------
-    # Training information
+    # Learning rate scheduler
+    # --------------------------------------------------------
+
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="min",
+        factor=0.5,
+        patience=3,
+        min_lr=0.000001
+    )
+
+    # --------------------------------------------------------
+    # Training configuration
     # --------------------------------------------------------
 
     print("\n" + "=" * 70)
+
     print("TRAINING CONFIGURATION")
+
     print("=" * 70)
 
-    print(
-        f"Device:          {device}"
-    )
+    print(f"Device:          {device}")
 
-    print(
-        f"Batch size:      {BATCH_SIZE}"
-    )
+    print(f"Classes:         {dataset.class_names}")
 
-    print(
-        f"Epochs:          {EPOCHS}"
-    )
+    print(f"Batch size:      {BATCH_SIZE}")
 
-    print(
-        f"Learning rate:   {LEARNING_RATE}"
-    )
+    print(f"Epochs:          {EPOCHS}")
 
-    print(
-        f"Validation:      "
-        f"{VALIDATION_SPLIT * 100:.0f}%"
-    )
+    print(f"Learning rate:   {LEARNING_RATE}")
 
-    print(
-        f"Model path:      "
-        f"{MODEL_PATH}"
-    )
+    print(f"Weight decay:    {WEIGHT_DECAY}")
+
+    print(f"Early stopping:  {PATIENCE}")
+
+    print(f"Model path:      {MODEL_PATH}")
 
     print("=" * 70)
 
@@ -768,101 +819,113 @@ def main():
     # Best model tracking
     # --------------------------------------------------------
 
-    best_validation_loss = float(
-        "inf"
-    )
+    best_validation_loss = float("inf")
 
     best_validation_accuracy = 0.0
 
     epochs_without_improvement = 0
 
+    history = {
+        "train_loss": [],
+        "train_accuracy": [],
+        "validation_loss": [],
+        "validation_accuracy": []
+    }
+
     # ========================================================
     # TRAINING LOOP
     # ========================================================
 
-    for epoch in range(
-        EPOCHS
-    ):
+    for epoch in range(EPOCHS):
 
         print(
-            f"\nEpoch "
-            f"{epoch + 1}/{EPOCHS}"
+            f"\nEPOCH {epoch + 1}/{EPOCHS}"
         )
 
-        print(
-            "-" * 60
-        )
+        print("-" * 70)
 
         # ----------------------------------------------------
         # Training
         # ----------------------------------------------------
 
-        train_loss, train_accuracy = (
-            train_one_epoch(
-                model,
-                train_loader,
-                criterion,
-                optimizer,
-                device
-            )
+        train_loss, train_accuracy = train_one_epoch(
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            device
         )
 
         # ----------------------------------------------------
         # Validation
         # ----------------------------------------------------
 
-        validation_loss, validation_accuracy = (
-            validate(
-                model,
-                validation_loader,
-                criterion,
-                device
-            )
+        (
+            validation_loss,
+            validation_accuracy,
+            predictions,
+            actual_labels
+        ) = validate(
+            model,
+            validation_loader,
+            criterion,
+            device
         )
 
         # ----------------------------------------------------
-        # Display
+        # Learning rate update
         # ----------------------------------------------------
 
-        print(
-            f"Train Loss: "
-            f"{train_loss:.4f}"
+        scheduler.step(validation_loss)
+
+        current_lr = optimizer.param_groups[0]["lr"]
+
+        # ----------------------------------------------------
+        # Store history
+        # ----------------------------------------------------
+
+        history["train_loss"].append(train_loss)
+
+        history["train_accuracy"].append(train_accuracy)
+
+        history["validation_loss"].append(validation_loss)
+
+        history["validation_accuracy"].append(
+            validation_accuracy
         )
 
-        print(
-            f"Train Accuracy: "
-            f"{train_accuracy:.2f}%"
-        )
+        # ----------------------------------------------------
+        # Display results
+        # ----------------------------------------------------
+
+        print(f"Train Loss:       {train_loss:.4f}")
+
+        print(f"Train Accuracy:   {train_accuracy:.2f}%")
+
+        print(f"Validation Loss:  {validation_loss:.4f}")
 
         print(
-            f"Validation Loss: "
-            f"{validation_loss:.4f}"
+            f"Validation Accuracy: {validation_accuracy:.2f}%"
         )
 
-        print(
-            f"Validation Accuracy: "
-            f"{validation_accuracy:.2f}%"
-        )
+        print(f"Learning Rate:    {current_lr:.7f}")
 
-        # ====================================================
-        # BEST MODEL
-        # ====================================================
+        # ----------------------------------------------------
+        # Save best model
+        # ----------------------------------------------------
 
         if validation_loss < best_validation_loss:
 
-            best_validation_loss = (
-                validation_loss
-            )
+            best_validation_loss = validation_loss
 
-            best_validation_accuracy = (
-                validation_accuracy
-            )
+            best_validation_accuracy = validation_accuracy
 
             epochs_without_improvement = 0
 
             save_model(
                 model,
                 optimizer,
+                scheduler,
                 epoch + 1,
                 validation_loss,
                 validation_accuracy,
@@ -876,36 +939,33 @@ def main():
 
             print(
                 f"No improvement: "
-                f"{epochs_without_improvement}/"
-                f"{PATIENCE}"
+                f"{epochs_without_improvement}/{PATIENCE}"
             )
 
-        # ====================================================
-        # EARLY STOPPING
-        # ====================================================
+        save_history(history)
 
-        if (
-            epochs_without_improvement
-            >= PATIENCE
-        ):
+        # ----------------------------------------------------
+        # Early stopping
+        # ----------------------------------------------------
 
-            print(
-                "\nEarly stopping triggered."
-            )
+        if epochs_without_improvement >= PATIENCE:
+
+            print("\nEarly stopping triggered.")
 
             break
 
     # ========================================================
-    # FINAL RESULT
+    # FINAL REPORT
     # ========================================================
 
     print("\n" + "=" * 70)
-    print("TRAINING COMPLETE")
+
+    print("MULTI-HAZARD MODEL TRAINING COMPLETE")
+
     print("=" * 70)
 
     print(
-        f"Best validation loss: "
-        f"{best_validation_loss:.4f}"
+        f"Best validation loss: {best_validation_loss:.4f}"
     )
 
     print(
@@ -913,10 +973,9 @@ def main():
         f"{best_validation_accuracy:.2f}%"
     )
 
-    print(
-        f"\nModel saved at:"
-        f"\n{MODEL_PATH}"
-    )
+    print(f"\nModel: {MODEL_PATH}")
+
+    print(f"History: {HISTORY_PATH}")
 
     print("=" * 70)
 

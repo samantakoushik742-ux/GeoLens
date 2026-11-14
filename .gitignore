@@ -28,3 +28,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Uploaded analysis files and local history
+data/uploads/
+data/analysis_history.json
+
+# Trained checkpoints
+models/*.pth

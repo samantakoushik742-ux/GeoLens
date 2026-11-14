@@ -1,0 +1,906 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Environmental Monitoring</title>
+
+    <meta
+        name="description"
+        content="Explore flood, drought, and vegetation monitoring through a unified environmental analysis platform."
+    >
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap"
+    >
+
+    <link rel="stylesheet" href="style.css">
+
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    >
+</head>
+
+<body>
+
+    <!-- NAVIGATION BAR -->
+    <header class="navbar">
+        <a href="index.html" class="logo" aria-label="Go to homepage">
+            <span class="logo-mark logo-mark-image" aria-hidden="true">
+                <img src="assets/geolens-logo.png" alt="">
+            </span>
+            <span>GeoLens</span>
+        </a>
+
+        <nav class="home-nav" aria-label="Main navigation">
+            <a href="#home" class="home-nav-link active">Home</a>
+            <a href="#monitoring" class="home-nav-link">Monitoring</a>
+            <a href="#imageAnalysis" class="home-nav-link">Image analysis</a>
+            <a href="#recentNews" class="home-nav-link">Recent news</a>
+            <a href="#history" class="home-nav-link">History</a>
+            <a href="#about" class="home-nav-link">About</a>
+        </nav>
+
+        <div class="navbar-actions">
+            <button
+                id="themeToggle"
+                class="icon-button"
+                type="button"
+                aria-label="Toggle colour theme"
+                title="Toggle theme"
+            >◐</button>
+
+        </div>
+    </header>
+
+
+    <!-- HOMEPAGE -->
+    <main id="home" class="homepage">
+
+        <!-- HERO -->
+        <section class="hero-section">
+            <div class="hero-content">
+
+                <div class="eyebrow">
+                    <span class="status-indicator"></span>
+                    ENVIRONMENTAL DISASTER PREDICTION SYSTEM
+                </div>
+
+                <h1>
+                    Foreseeing the danger,
+                    <span class="hero-highlight">shielding the future.</span>
+                </h1>
+
+                <p class="hero-description">
+                    Explore environmental conditions through a unified
+                    monitoring platform for floods, droughts, and vegetation.
+                    Navigate regional observations and access location-specific
+                    environmental analysis.
+                </p>
+
+                <div class="hero-actions">
+                    <a href="#monitoring" class="primary-button">
+                        Explore Monitoring
+                        <span aria-hidden="true">→</span>
+                    </a>
+
+                    <a href="#about" class="secondary-button">
+                        About the Platform
+                    </a>
+                </div>
+
+                <div class="hero-note">
+                    <span class="note-line"></span>
+                    <span>
+                        Three monitoring areas.
+                        One environmental overview.
+                    </span>
+                </div>
+
+            </div>
+
+            <div class="hero-visual" aria-hidden="true">
+                <div class="visual-grid"></div>
+                <div class="visual-orbit orbit-one"></div>
+                <div class="visual-orbit orbit-two"></div>
+
+                <div class="visual-core">
+                    <span class="core-label">EARTH</span>
+                    <span class="core-symbol">◎</span>
+                    <span class="core-caption">Environmental system</span>
+                </div>
+
+                <div class="visual-tag visual-tag-top">
+                    <span class="tag-dot flood-dot"></span>
+                    FLOOD
+                </div>
+
+                <div class="visual-tag visual-tag-left">
+                    <span class="tag-dot drought-dot"></span>
+                    DROUGHT
+                </div>
+
+                <div class="visual-tag visual-tag-bottom">
+                    <span class="tag-dot vegetation-dot"></span>
+                    VEGETATION
+                </div>
+            </div>
+        </section>
+
+
+        <!-- PLATFORM OVERVIEW -->
+        <section class="platform-overview" aria-label="Platform overview">
+            <div class="overview-item">
+                <span class="overview-number">01</span>
+                <div>
+                    <h2>Explore</h2>
+                    <p>Select an environmental monitoring category.</p>
+                </div>
+            </div>
+
+            <div class="overview-divider"></div>
+
+            <div class="overview-item">
+                <span class="overview-number">02</span>
+                <div>
+                    <h2>Select a location</h2>
+                    <p>Browse the locations available for that category.</p>
+                </div>
+            </div>
+
+            <div class="overview-divider"></div>
+
+            <div class="overview-item">
+                <span class="overview-number">03</span>
+                <div>
+                    <h2>Analyse</h2>
+                    <p>Open location-specific environmental information.</p>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- MONITORING CATEGORIES -->
+        <section id="monitoring" class="monitoring-section">
+
+            <div class="section-heading">
+                <div>
+                    <span class="section-eyebrow">MONITORING AREAS / 03</span>
+                    <h2>Explore Monitoring</h2>
+
+                    <p>
+                        Choose an environmental system to explore its
+                        available locations and analysis.
+                    </p>
+                </div>
+
+                <span class="section-index">01 — 03</span>
+            </div>
+
+
+            <!-- HOMEPAGE SEARCH -->
+            <div class="location-search">
+                <span class="search-symbol" aria-hidden="true">⌕</span>
+
+                <input
+                    type="search"
+                    id="locationSearch"
+                    name="locationSearch"
+                    placeholder="Search monitoring categories or locations..."
+                    aria-label="Search monitoring categories or locations"
+                    autocomplete="off"
+                >
+
+                <span class="search-shortcut">SEARCH</span>
+            </div>
+
+            <div
+                id="homepageLocationResults"
+                class="homepage-location-results"
+                role="list"
+                aria-label="Matching locations"
+                hidden
+            ></div>
+
+            <p
+                id="searchMessage"
+                class="search-message"
+                role="status"
+                aria-live="polite"
+                hidden
+            ></p>
+
+
+            <!-- CATEGORY CARDS -->
+            <div class="category-grid">
+
+                <!-- FLOOD -->
+                <article
+                    class="category-card flood-category"
+                    data-category="flood"
+                    data-search="flood floods water inundation rainfall"
+                >
+                    <div class="category-card-top">
+                        <span class="category-number">01</span>
+                        <span class="category-status">MONITORING AREA</span>
+                    </div>
+
+                    <div class="category-visual flood-visual" aria-hidden="true">
+                        <div class="visual-contour contour-one"></div>
+                        <div class="visual-contour contour-two"></div>
+                        <div class="visual-contour contour-three"></div>
+                        <span class="category-visual-symbol">≈</span>
+                    </div>
+
+                    <div class="category-card-content">
+                        <span class="category-label">WATER SYSTEMS</span>
+                        <h3>Flood Monitoring</h3>
+
+                        <p>
+                            Explore flood-related conditions and available
+                            regional observations to understand potential
+                            inundation concerns.
+                        </p>
+
+                        <div class="category-card-footer">
+                            <span class="category-accent-label">
+                                FLOOD / HYDROLOGY
+                            </span>
+
+                            <button
+                                type="button"
+                                class="category-link"
+                                data-open-category="flood"
+                                aria-label="Explore flood monitoring"
+                            >
+                                Explore <span aria-hidden="true">↗</span>
+                            </button>
+                        </div>
+                    </div>
+                </article>
+
+
+                <!-- DROUGHT -->
+                <article
+                    class="category-card drought-category"
+                    data-category="drought"
+                    data-search="drought dry soil water scarcity rainfall deficit"
+                >
+                    <div class="category-card-top">
+                        <span class="category-number">02</span>
+                        <span class="category-status">MONITORING AREA</span>
+                    </div>
+
+                    <div class="category-visual drought-visual" aria-hidden="true">
+                        <div class="drought-ring ring-one"></div>
+                        <div class="drought-ring ring-two"></div>
+                        <div class="drought-ring ring-three"></div>
+                        <span class="category-visual-symbol">⌁</span>
+                    </div>
+
+                    <div class="category-card-content">
+                        <span class="category-label">WATER AVAILABILITY</span>
+                        <h3>Drought Monitoring</h3>
+
+                        <p>
+                            Explore drought-related conditions and available
+                            observations associated with dryness and
+                            water availability.
+                        </p>
+
+                        <div class="category-card-footer">
+                            <span class="category-accent-label">
+                                DROUGHT / DRYNESS
+                            </span>
+
+                            <button
+                                type="button"
+                                class="category-link"
+                                data-open-category="drought"
+                                aria-label="Explore drought monitoring"
+                            >
+                                Explore <span aria-hidden="true">↗</span>
+                            </button>
+                        </div>
+                    </div>
+                </article>
+
+
+                <!-- VEGETATION -->
+                <article
+                    class="category-card vegetation-category"
+                    data-category="vegetation"
+                    data-search="vegetation plants forest greenery land cover"
+                >
+                    <div class="category-card-top">
+                        <span class="category-number">03</span>
+                        <span class="category-status">MONITORING AREA</span>
+                    </div>
+
+                    <div class="category-visual vegetation-visual" aria-hidden="true">
+                        <div class="vegetation-grid"></div>
+                        <span class="category-visual-symbol">⌘</span>
+                    </div>
+
+                    <div class="category-card-content">
+                        <span class="category-label">LAND SYSTEMS</span>
+                        <h3>Vegetation Monitoring</h3>
+
+                        <p>
+                            Explore vegetation-related observations and
+                            available information about plant cover and
+                            environmental change.
+                        </p>
+
+                        <div class="category-card-footer">
+                            <span class="category-accent-label">
+                                VEGETATION / LAND
+                            </span>
+
+                            <button
+                                type="button"
+                                class="category-link"
+                                data-open-category="vegetation"
+                                aria-label="Explore vegetation monitoring"
+                            >
+                                Explore <span aria-hidden="true">↗</span>
+                            </button>
+                        </div>
+                    </div>
+                </article>
+
+            </div>
+
+            <!-- INTERACTIVE LOCATION MAP -->
+<section id="locationMapSection" class="location-map-section">
+
+    <div class="section-heading">
+        <div>
+            <span class="section-eyebrow">
+                GEOGRAPHIC EXPLORER / 15 LOCATIONS
+            </span>
+
+            <h2>Explore the Map</h2>
+
+            <p>
+                Select a monitoring area to explore its locations
+                across West Bengal and North Bengal.
+            </p>
+        </div>
+
+        <span class="section-index">MAP / 01</span>
+    </div>
+
+    <div
+        class="map-filter-bar"
+        role="group"
+        aria-label="Filter map locations"
+    >
+        <button
+            type="button"
+            class="map-filter-button active"
+            data-map-filter="all"
+            aria-pressed="true"
+        >
+            All locations
+        </button>
+
+        <button
+            type="button"
+            class="map-filter-button"
+            data-map-filter="flood"
+            aria-pressed="false"
+        >
+            <span class="map-filter-dot flood-map-dot"></span>
+            Flood
+        </button>
+
+        <button
+            type="button"
+            class="map-filter-button"
+            data-map-filter="drought"
+            aria-pressed="false"
+        >
+            <span class="map-filter-dot drought-map-dot"></span>
+            Drought
+        </button>
+
+        <button
+            type="button"
+            class="map-filter-button"
+            data-map-filter="vegetation"
+            aria-pressed="false"
+        >
+            <span class="map-filter-dot vegetation-map-dot"></span>
+            Vegetation
+        </button>
+    </div>
+
+    <div class="interactive-map-frame">
+        <div
+            id="locationMap"
+            aria-label="Interactive map of environmental monitoring locations in West Bengal"
+        ></div>
+
+        <div
+            class="map-loading-message"
+            id="locationMapMessage"
+            role="status"
+        >
+            Loading map locations…
+        </div>
+    </div>
+
+    <div class="interactive-map-footer">
+        <p>
+            <span class="map-source-dot"></span>
+            Location markers show monitoring areas, not live risk measurements.
+        </p>
+
+        <span>Map tiles © OpenStreetMap contributors</span>
+    </div>
+
+</section>
+
+            <p class="monitoring-disclaimer">
+                <span class="disclaimer-mark">i</span>
+                Monitoring results, observations, and assessments will depend
+                on the data sources connected to each location.
+            </p>
+
+        </section>
+
+
+        <!-- SHARED QUICK GUIDE -->
+        <section class="category-guide shared-quick-guide" aria-labelledby="sharedGuideTitle">
+            <div class="category-guide-heading">
+                <span class="section-eyebrow">A QUICK GUIDE</span>
+                <h2 id="sharedGuideTitle">How to use this tool</h2>
+                <p>Choose a monitoring area and location, then provide two images for analysis.</p>
+            </div>
+
+            <ol class="category-guide-steps">
+                <li><span>01</span><div><strong>Choose an area and place</strong><p>Open Flood, Drought, or Vegetation and select a location from its searchable list.</p></div></li>
+                <li><span>02</span><div><strong>Add two images</strong><p>Choose the image pair requested by your research workflow. Previews appear before submission.</p></div></li>
+                <li><span>03</span><div><strong>Review the analysis</strong><p>Analysis results and saved history will appear when the model service and storage are connected.</p></div></li>
+            </ol>
+            <p class="category-accuracy-note"><strong>Accuracy information:</strong> Validated model accuracy is not available yet. It will be shown only after evaluation results are provided.</p>
+        </section>
+
+        <!-- SHARED TWO-IMAGE ANALYSIS -->
+        <section id="imageAnalysis" class="image-analysis-section shared-image-analysis" aria-labelledby="imageAnalysisTitle">
+            <div class="image-analysis-heading">
+                <div>
+                    <span class="section-eyebrow">RESEARCHER WORKSPACE</span>
+                    <h2 id="imageAnalysisTitle">Submit two images for analysis</h2>
+                    <p>Add the image pair for the area you are studying. This form is ready for backend integration.</p>
+                </div>
+                <span class="integration-badge">ANALYSIS SERVICE NOT CONNECTED</span>
+            </div>
+
+            <form id="imageAnalysisForm" class="image-analysis-form">
+                <div class="image-input-grid">
+                    <div class="image-input-slot">
+                        <label class="image-upload-control" for="analysisImageInputOne">
+                            <span class="upload-symbol" aria-hidden="true">01</span>
+                            <span><strong>Choose image one</strong><small>Select the first image in your pair</small></span>
+                        </label>
+                        <input id="analysisImageInputOne" class="visually-hidden-input" type="file" accept="image/*" aria-describedby="imageAnalysisStatus">
+                        <div id="imagePreviewPanelOne" class="image-preview-panel" hidden>
+                            <img id="analysisImagePreviewOne" alt="Preview of first selected image">
+                            <div class="image-preview-details"><strong id="analysisImageNameOne"></strong><span id="analysisImageSizeOne"></span></div>
+                            <button class="image-clear-button" type="button" data-clear-image="one">Remove</button>
+                        </div>
+                    </div>
+                    <div class="image-input-slot">
+                        <label class="image-upload-control" for="analysisImageInputTwo">
+                            <span class="upload-symbol" aria-hidden="true">02</span>
+                            <span><strong>Choose image two</strong><small>Select the second image in your pair</small></span>
+                        </label>
+                        <input id="analysisImageInputTwo" class="visually-hidden-input" type="file" accept="image/*" aria-describedby="imageAnalysisStatus">
+                        <div id="imagePreviewPanelTwo" class="image-preview-panel" hidden>
+                            <img id="analysisImagePreviewTwo" alt="Preview of second selected image">
+                            <div class="image-preview-details"><strong id="analysisImageNameTwo"></strong><span id="analysisImageSizeTwo"></span></div>
+                            <button class="image-clear-button" type="button" data-clear-image="two">Remove</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="image-analysis-actions">
+                    <button id="submitAnalysisImage" class="image-submit-button" type="submit" disabled>Submit image pair</button>
+                    <p id="imageAnalysisStatus" class="image-analysis-status" role="status" aria-live="polite">Select both images to prepare the submission.</p>
+                </div>
+            </form>
+            <p class="integration-note"><strong>Integration placeholder:</strong> Images are previewed in your browser only. They are not uploaded and no model result is generated until the backend is connected.</p>
+        </section>
+
+        <!-- RECENT NEWS -->
+        <section id="recentNews" class="updates-section news-section" aria-labelledby="recentNewsTitle">
+            <div class="news-hero">
+                <div class="news-hero-copy">
+                    <span class="section-eyebrow">UPDATES / NEWS DESK</span>
+                    <h2 id="recentNewsTitle">Recent news</h2>
+                    <p>Flood, drought and vegetation stories from the places we monitor. The last month first; if it was quiet, the last three months.</p>
+                </div>
+
+                <div class="news-location-picker">
+                    <label for="newsLocationSelect" class="news-field-label">Showing news for</label>
+                    <div class="news-select-wrap">
+                        <span class="news-select-pin" aria-hidden="true"></span>
+                        <select id="newsLocationSelect" name="newsLocation"></select>
+                    </div>
+                    <span id="newsCuratedLabel" class="news-curated"></span>
+                </div>
+            </div>
+
+            <div class="news-controls">
+                <div class="news-topic-filter" role="group" aria-label="Filter by topic">
+                    <button type="button" class="news-topic-button active" data-news-topic="all" aria-pressed="true">All <span class="news-topic-count" data-news-count="all">0</span></button>
+                    <button type="button" class="news-topic-button" data-news-topic="flood" aria-pressed="false"><span class="map-filter-dot flood-map-dot"></span>Flood <span class="news-topic-count" data-news-count="flood">0</span></button>
+                    <button type="button" class="news-topic-button" data-news-topic="drought" aria-pressed="false"><span class="map-filter-dot drought-map-dot"></span>Drought <span class="news-topic-count" data-news-count="drought">0</span></button>
+                    <button type="button" class="news-topic-button" data-news-topic="vegetation" aria-pressed="false"><span class="map-filter-dot vegetation-map-dot"></span>Vegetation <span class="news-topic-count" data-news-count="vegetation">0</span></button>
+                </div>
+                <p id="newsWindowLabel" class="news-window-label" role="status" aria-live="polite"></p>
+            </div>
+
+            <div id="newsList" class="news-board" aria-label="News for the selected location"></div>
+
+            <p class="news-footnote">Headlines link to the original publishers. Summaries are our own short notes; read the full report at the source.</p>
+        </section>
+
+        <!-- ANALYSIS HISTORY -->
+        <section id="history" class="updates-section history-section" aria-labelledby="historyTitle">
+            <div class="section-heading">
+                <div>
+                    <span class="section-eyebrow">RESEARCHER WORKSPACE</span>
+                    <h2 id="historyTitle">Analysis history</h2>
+                    <p>Your previously submitted image analyses will live here.</p>
+                </div>
+                <span class="section-index">HISTORY</span>
+            </div>
+            <div id="analysisHistoryList" class="coming-soon-card" role="status">
+                <span class="coming-soon-badge">COMING SOON</span>
+                <h3>Analysis history is on the way</h3>
+                <p>We're building saved results so you can revisit past image-pair analyses, compare them over time and download reports. This section will open once storage is connected.</p>
+            </div>
+        </section>
+
+
+        <!-- ABOUT THE PLATFORM -->
+        <section id="about" class="about-section about-v2" aria-labelledby="aboutTitle">
+            <div class="about-intro">
+                <div>
+                    <span class="section-eyebrow">ABOUT GEOLENS</span>
+                    <h2 id="aboutTitle">Reading environmental change from orbit, one place at a time.</h2>
+                </div>
+                <div class="about-intro-copy">
+                    <p>GeoLens is an environmental monitoring and disaster-prediction platform for West Bengal. It follows three kinds of change (flooding, drought and vegetation loss) across places that are hit again and again, from the Sundarbans delta to the Darjeeling hills.</p>
+                    <p>Instead of looking at a single satellite photo, GeoLens compares an older image and a recent image of the same place, and asks a trained model what changed and how serious it looks.</p>
+                    <div class="about-cta">
+                        <a href="#monitoring" class="primary-button" data-nav-target="monitoring">Explore monitoring</a>
+                        <a href="#imageAnalysis" class="secondary-button" data-nav-target="imageAnalysis">Try image analysis</a>
+                    </div>
+                </div>
+            </div>
+
+            <dl class="about-stats">
+                <div><dt>Monitoring areas</dt><dd>3</dd></div>
+                <div><dt>Locations tracked</dt><dd>13</dd></div>
+                <div><dt>Change classes</dt><dd>5</dd></div>
+                <div><dt>Model input</dt><dd>256<span>×</span>256</dd></div>
+            </dl>
+
+            <div class="about-block">
+                <h3 class="about-block-title"><span>01</span>What we monitor</h3>
+                <div class="about-pillars">
+                    <article class="about-pillar about-pillar--flood">
+                        <span class="about-pillar-mark" aria-hidden="true"></span>
+                        <h4>Flood</h4>
+                        <p>River overflow, embankment breaches, bank erosion and urban waterlogging.</p>
+                        <ul><li>Kolkata</li><li>Sundarbans</li><li>Malda</li><li>Murshidabad</li><li>Howrah</li></ul>
+                    </article>
+                    <article class="about-pillar about-pillar--drought">
+                        <span class="about-pillar-mark" aria-hidden="true"></span>
+                        <h4>Drought</h4>
+                        <p>Dry spells and moisture stress on the laterite plateau of south-west Bengal.</p>
+                        <ul><li>Bankura</li><li>Purulia</li><li>Jhargram</li><li>Birbhum</li><li>Paschim Medinipur</li></ul>
+                    </article>
+                    <article class="about-pillar about-pillar--vegetation">
+                        <span class="about-pillar-mark" aria-hidden="true"></span>
+                        <h4>Vegetation</h4>
+                        <p>Health and loss of mangroves, forests and tea gardens.</p>
+                        <ul><li>Sundarbans</li><li>Dooars</li><li>Darjeeling</li><li>Jalpaiguri</li><li>Purulia</li></ul>
+                    </article>
+                </div>
+            </div>
+
+            <div class="about-block">
+                <h3 class="about-block-title"><span>02</span>How the analysis works</h3>
+                <ol class="about-pipeline">
+                    <li>
+                        <span class="about-step">Step 1</span>
+                        <h4>Two images, one place</h4>
+                        <p>A historical and a recent satellite image (GeoTIFF) of the same area are paired together.</p>
+                    </li>
+                    <li>
+                        <span class="about-step">Step 2</span>
+                        <h4>Clean &amp; align</h4>
+                        <p>Invalid pixels are zeroed, each band is clipped to its 2nd–98th percentile, both images are normalised with shared statistics so real change isn't erased, then resized to 256×256.</p>
+                    </li>
+                    <li>
+                        <span class="about-step">Step 3</span>
+                        <h4>Temporal CNN</h4>
+                        <p>One shared convolutional encoder turns each image into 512 features. The model looks at the old features, the new features and the difference between them (1,536 features in total).</p>
+                    </li>
+                    <li>
+                        <span class="about-step">Step 4</span>
+                        <h4>Class &amp; risk</h4>
+                        <p>It predicts <em>normal, flood, wildfire, cyclone</em> or <em>landslide</em>, then combines confidence and a change score into a LOW / MEDIUM / HIGH risk level.</p>
+                    </li>
+                </ol>
+            </div>
+
+            <aside class="about-note">
+                <strong>Please note</strong>
+                <p>The risk level is a project-level estimate based on model confidence and how much the image changed. It is not a certified emergency warning. For alerts, follow IMD and the West Bengal disaster management department.</p>
+            </aside>
+        </section>
+
+
+        <!-- FOOTER -->
+        <footer class="homepage-footer">
+            <a href="#home" class="footer-brand">
+                GEOLENS / ENVIRONMENTAL MONITORING
+            </a>
+
+            <p>
+                Environmental monitoring interface
+                <span aria-hidden="true">·</span>
+                Data availability depends on connected sources
+            </p>
+
+            <a href="#home" class="back-to-top">Back to top ↑</a>
+        </footer>
+
+    </main>
+
+
+    <!-- CATEGORY LOCATION VIEW -->
+    <section id="categoryPage" class="category-page" hidden>
+        <div class="category-page-header">
+            <a href="#home" id="backToHome" class="back-link">
+                ← Back to homepage
+            </a>
+
+            <span id="categoryPageEyebrow" class="section-eyebrow">
+                MONITORING AREA
+            </span>
+
+            <h1 id="categoryPageTitle">Flood Monitoring</h1>
+
+            <p id="categoryPageDescription">
+                Browse locations available for environmental monitoring.
+            </p>
+        </div>
+
+        <div class="location-list-header">
+            <h2>Available locations</h2>
+
+            <input
+                id="locationListSearch"
+                type="search"
+                placeholder="Search locations..."
+                aria-label="Search locations"
+            >
+        </div>
+
+        <div id="locationList" class="location-list"></div>
+
+        <p id="locationListMessage" class="search-message" role="status"></p>
+
+    </section>
+
+
+    <!-- INDIVIDUAL LOCATION ANALYSIS PAGE -->
+    <section id="locationAnalysisPage" class="location-analysis-page" hidden>
+
+        <div class="analysis-breadcrumbs">
+            <a href="#home" id="analysisHomeLink">Home</a>
+            <span aria-hidden="true">/</span>
+            <a href="#" id="analysisCategoryLink">Monitoring</a>
+            <span aria-hidden="true">/</span>
+            <span id="analysisBreadcrumbLocation">Location</span>
+        </div>
+
+        <header class="location-analysis-header">
+            <div>
+                <span id="analysisCategoryLabel" class="section-eyebrow">
+                    ENVIRONMENTAL MONITORING
+                </span>
+
+                <h1 id="analysisLocationTitle">Location Analysis</h1>
+
+                <p id="analysisLocationRegion">
+                    Region information unavailable
+                </p>
+            </div>
+
+            <span id="analysisDataStatus" class="analysis-data-badge">
+                DATA NOT CONNECTED
+            </span>
+        </header>
+
+
+        <!-- PLACE IMAGE GALLERY -->
+        <section class="place-gallery-section" aria-labelledby="placeGalleryTitle">
+            <div class="analysis-section-heading">
+                <div>
+                    <span class="section-eyebrow">LOCATION IMAGERY</span>
+                    <h2 id="placeGalleryTitle">Images from this place</h2>
+                </div>
+                <p>Ground and satellite views of the area. Select a photo to view it full size.</p>
+            </div>
+
+            <div class="place-gallery-grid">
+                <figure class="place-image-card place-image-card--feature" data-place-card="0">
+                    <button type="button" class="place-image-frame" data-place-open="0" aria-label="Open image 01 full size">
+                        <img data-place-image="0" alt="" decoding="async">
+                        <div class="place-image-placeholder" data-place-placeholder="0">
+                            <span class="place-image-spinner" aria-hidden="true"></span>
+                            <small>Loading image 01</small>
+                        </div>
+                        <span class="place-image-index" aria-hidden="true">01</span>
+                    </button>
+                    <figcaption class="place-image-caption" data-place-caption="0">Location image 01</figcaption>
+                </figure>
+                <figure class="place-image-card" data-place-card="1">
+                    <button type="button" class="place-image-frame" data-place-open="1" aria-label="Open image 02 full size">
+                        <img data-place-image="1" alt="" decoding="async">
+                        <div class="place-image-placeholder" data-place-placeholder="1">
+                            <span class="place-image-spinner" aria-hidden="true"></span>
+                            <small>Loading image 02</small>
+                        </div>
+                        <span class="place-image-index" aria-hidden="true">02</span>
+                    </button>
+                    <figcaption class="place-image-caption" data-place-caption="1">Location image 02</figcaption>
+                </figure>
+                <figure class="place-image-card" data-place-card="2">
+                    <button type="button" class="place-image-frame" data-place-open="2" aria-label="Open image 03 full size">
+                        <img data-place-image="2" alt="" decoding="async">
+                        <div class="place-image-placeholder" data-place-placeholder="2">
+                            <span class="place-image-spinner" aria-hidden="true"></span>
+                            <small>Loading image 03</small>
+                        </div>
+                        <span class="place-image-index" aria-hidden="true">03</span>
+                    </button>
+                    <figcaption class="place-image-caption" data-place-caption="2">Location image 03</figcaption>
+                </figure>
+            </div>
+        </section>
+
+        <!-- IMAGE VIEWER -->
+        <dialog id="placeLightbox" class="place-lightbox" aria-label="Image viewer">
+            <button type="button" class="place-lightbox-close" data-lightbox-close aria-label="Close image viewer">✕</button>
+            <img id="placeLightboxImage" alt="">
+            <div class="place-lightbox-caption">
+                <p id="placeLightboxCaption"></p>
+                <a id="placeLightboxCredit" target="_blank" rel="noopener noreferrer"></a>
+            </div>
+        </dialog>
+
+        <div class="analysis-page-actions">
+            <button id="backToLocations" class="secondary-button" type="button">
+                ← Back to locations
+            </button>
+
+            <button id="analysisNewsButton" class="secondary-button analysis-news-button" type="button">
+                Recent news for this location →
+            </button>
+        </div>
+
+    </section>
+
+
+    <!-- LEGACY MONITORING VIEW -->
+    <section id="legacyDashboard" hidden aria-hidden="true">
+
+        <aside class="sidebar">
+            <nav aria-label="Legacy monitoring navigation">
+                <a href="#" class="nav-item" data-section="dashboard">Dashboard</a>
+                <a href="#" class="nav-item" data-section="flood">Flood</a>
+                <a href="#" class="nav-item" data-section="drought">Drought</a>
+                <a href="#" class="nav-item" data-section="vegetation">Vegetation</a>
+            </nav>
+        </aside>
+
+        <div class="app-container">
+            <main class="main-content">
+            
+                <header class="dashboard-header">
+                    <h1>Environmental Dashboard</h1>
+                </header>
+
+                <div class="status-cards">
+                    <article class="status-card flood-card">
+                        <h2>Flood Monitoring</h2>
+                        <p id="floodValue">Moderate</p>
+                        <p>Current flood risk level</p>
+                    </article>
+
+                    <article class="status-card drought-card">
+                        <h2>Drought Monitoring</h2>
+                        <p id="droughtValue">Low</p>
+                        <p>Current drought risk level</p>
+                    </article>
+
+                    <article class="status-card vegetation-card">
+                        <h2>Vegetation Monitoring</h2>
+                        <p id="vegetationValue">Healthy</p>
+                        <p>Current vegetation condition</p>
+                    </article>
+                </div>
+
+                <div class="monitoring-context">
+                    <span>West Bengal, India</span>
+                    <span id="lastUpdated">
+                        Not connected to a live data source
+                    </span>
+                </div>
+
+                <section class="analysis-section">
+                    <div class="section-header">
+                        <h2 id="monitoringTitle">FLOOD MONITORING</h2>
+                        <button id="refreshButton" type="button">Refresh</button>
+                    </div>
+
+                    <p id="systemStatus">Monitoring view</p>
+
+                    <div class="layer-controls">
+                        <button class="layer-button" data-layer="flood" type="button">
+                            Flood
+                        </button>
+
+                        <button class="layer-button" data-layer="drought" type="button">
+                            Drought
+                        </button>
+
+                        <button class="layer-button" data-layer="vegetation" type="button">
+                            Vegetation
+                        </button>
+                    </div>
+
+                    <div class="risk-legend">
+                        <span>Low</span>
+                        <span>Moderate</span>
+                        <span>High</span>
+                    </div>
+
+                    <div class="map-container">
+                        <div id="map" style="height: 400px; width: 100%;"></div>
+
+                        <div id="mapLegend">
+                            <p id="mapLegendText">Illustrative map overlay</p>
+                        </div>
+                    </div>
+                </section>
+
+            </main>
+        </div>
+
+    </section>
+
+
+    <!-- SCRIPTS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="news-data.js"></script>
+    <script src="script.js"></script>
+
+</body>
+</html>
+

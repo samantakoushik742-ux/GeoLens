@@ -27,11 +27,9 @@ class TemporalSatelliteDataset(Dataset):
         # ====================================================
 
         self.class_names = [
-            "normal",
-            "flood",
-            "wildfire",
-            "cyclone",
-            "landslide"
+            "vegetation",
+            "drought",
+            "flood"
         ]
 
         self.class_to_index = {
@@ -114,13 +112,13 @@ class TemporalSatelliteDataset(Dataset):
 
             historical_files = sorted(
                 list(
-                    historical_dir.glob(
+                    historical_dir.rglob(
                         "*_processed.tif"
                     )
                 )
                 +
                 list(
-                    historical_dir.glob(
+                    historical_dir.rglob(
                         "*_processed.tiff"
                     )
                 )
@@ -132,20 +130,20 @@ class TemporalSatelliteDataset(Dataset):
 
             for historical_file in historical_files:
 
-                filename = (
-                    historical_file.name
+                relative_path = historical_file.relative_to(
+                    historical_dir
                 )
 
                 recent_file = (
                     recent_dir /
-                    filename
+                    relative_path
                 )
 
                 if not recent_file.exists():
 
                     print(
                         "WARNING: Missing recent "
-                        f"image for {filename}"
+                        f"image for {relative_path}"
                     )
 
                     continue
@@ -227,11 +225,14 @@ class TemporalSatelliteDataset(Dataset):
             raise RuntimeError(
                 "\nNo valid historical/recent "
                 "image pairs were found.\n\n"
-                "Check that your dataset follows:\n"
-                "class/historical/*.tif\n"
-                "class/recent/*.tif\n\n"
-                "and that corresponding filenames "
-                "are identical."
+                "Processed data must follow:\n"
+                "data/processed/<vegetation|drought|flood>/"
+                "historical/**/*_processed.tif\n"
+                "data/processed/<vegetation|drought|flood>/"
+                "recent/**/*_processed.tif\n\n"
+                "Historical and recent files must share "
+                "the same relative path. Create them with:\n"
+                "python preprocessing/preprocess_dataset.py"
             )
 
     # ========================================================
