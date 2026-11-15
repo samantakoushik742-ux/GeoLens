@@ -1094,6 +1094,9 @@ const imageAnalysisStatus = document.querySelector("#imageAnalysisStatus");
 const integrationBadge = document.querySelector(".integration-badge");
 const integrationNote = document.querySelector(".integration-note");
 const analysisHistoryList = document.querySelector("#analysisHistoryList");
+const analysisCategoryInputs = document.querySelectorAll('input[name="analysisCategory"]');
+let selectedAnalysisCategory = "";
+let analysisSubmissionInProgress = false;
 const apiBaseUrl = (
     window.GEOLENS_API && typeof window.GEOLENS_API.BASE_URL === "string"
         ? window.GEOLENS_API.BASE_URL
@@ -1110,7 +1113,8 @@ const imageSlots = {
         name: document.querySelector("#analysisImageNameOne"),
         size: document.querySelector("#analysisImageSizeOne"),
         file: null,
-        objectUrl: null
+        objectUrl: null,
+        previewRequestId: 0
     },
     two: {
         input: document.querySelector("#analysisImageInputTwo"),
@@ -1119,9 +1123,118 @@ const imageSlots = {
         name: document.querySelector("#analysisImageNameTwo"),
         size: document.querySelector("#analysisImageSizeTwo"),
         file: null,
-        objectUrl: null
+        objectUrl: null,
+        previewRequestId: 0
     }
 };
+
+let tiffPreviewLibraryPromise;
+
+function loadTiffPreviewLibrary() {
+    if (window.GeoTIFF && typeof window.GeoTIFF.fromBlob === "function") {
+        return Promise.resolve(window.GeoTIFF);
+    }
+
+    if (!tiffPreviewLibraryPromise) {
+        tiffPreviewLibraryPromise = new Promise(function (resolve, reject) {
+            const script = document.createElement("script");
+            script.src = "https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js";
+            script.async = true;
+            script.onload = function () {
+                if (window.GeoTIFF && typeof window.GeoTIFF.fromBlob === "function") {
+                    resolve(window.GeoTIFF);
+                } else {
+                    tiffPreviewLibraryPromise = null;
+                    reject(new Error("The TIFF preview library did not load correctly."));
+                }
+            };
+            script.onerror = function () {
+                tiffPreviewLibraryPromise = null;
+                reject(new Error("The TIFF preview library could not be loaded."));
+            };
+            document.head.append(script);
+        });
+    }
+
+    return tiffPreviewLibraryPromise;
+}
+
+function percentileRange(values, pixelCount, sampleCount, sampleIndex) {
+    const sampleStride = Math.max(1, Math.floor(pixelCount / 4096));
+    const samples = [];
+    for (let pixel = 0; pixel < pixelCount; pixel += sampleStride) {
+        const value = Number(values[pixel * sampleCount + sampleIndex]);
+        if (Number.isFinite(value)) samples.push(value);
+    }
+    if (!samples.length) return null;
+
+    samples.sort(function (left, right) {
+        return left - right;
+    });
+    return {
+        low: samples[Math.floor((samples.length - 1) * 0.02)],
+        high: samples[Math.floor((samples.length - 1) * 0.98)]
+    };
+}
+
+async function createTiffPreview(file) {
+    const GeoTIFF = await loadTiffPreviewLibrary();
+    const tiff = await GeoTIFF.fromBlob(file);
+    const image = await tiff.getImage();
+    const width = image.getWidth();
+    const height = image.getHeight();
+    const scale = Math.min(1, 512 / Math.max(width, height));
+    const previewWidth = Math.max(1, Math.round(width * scale));
+    const previewHeight = Math.max(1, Math.round(height * scale));
+    const sampleCount = Math.max(1, Math.min(image.getSamplesPerPixel() || 1, 3));
+    const samples = Array.from({ length: sampleCount }, function (_value, index) {
+        return index;
+    });
+    const raster = await image.readRasters({
+        samples: samples,
+        interleave: true,
+        width: previewWidth,
+        height: previewHeight
+    });
+    const pixelCount = previewWidth * previewHeight;
+    const ranges = samples.map(function (sampleIndex) {
+        return percentileRange(raster, pixelCount, sampleCount, sampleIndex);
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = previewWidth;
+    canvas.height = previewHeight;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("A canvas is unavailable for TIFF preview rendering.");
+
+    const imageData = context.createImageData(previewWidth, previewHeight);
+    for (let pixel = 0; pixel < pixelCount; pixel += 1) {
+        for (let channel = 0; channel < 3; channel += 1) {
+            const band = sampleCount === 1 ? 0 : Math.min(channel, sampleCount - 1);
+            const value = Number(raster[pixel * sampleCount + band]);
+            const range = ranges[band];
+            const scaled = !Number.isFinite(value) || !range
+                ? 0
+                : range.high <= range.low
+                    ? 127
+                    : Math.round(Math.max(0, Math.min(1,
+                        (value - range.low) / (range.high - range.low)
+                    )) * 255);
+            imageData.data[pixel * 4 + channel] = scaled;
+        }
+        imageData.data[pixel * 4 + 3] = 255;
+    }
+    context.putImageData(imageData, 0, 0);
+
+    return new Promise(function (resolve, reject) {
+        canvas.toBlob(function (blob) {
+            if (blob) {
+                resolve(blob);
+            } else {
+                reject(new Error("The TIFF preview could not be converted to PNG."));
+            }
+        }, "image/png");
+    });
+}
 
 async function apiRequest(path, options) {
     if (!apiBaseUrl && !isLocalFrontend) {
@@ -1235,14 +1348,25 @@ function checkBackendStatus() {
 }
 
 function updateImagePairStatus() {
-    const bothSelected = imageSlots.one.file && imageSlots.two.file;
-    if (submitAnalysisImage) submitAnalysisImage.disabled = !bothSelected;
-    if (imageAnalysisStatus && bothSelected) {
-        imageAnalysisStatus.textContent = currentCategory
-            ? "Both images are ready to submit for " + currentCategory + " analysis."
-            : "Both images are ready. Choose a monitoring category before submitting.";
-    } else if (imageAnalysisStatus) {
-        imageAnalysisStatus.textContent = "Select both images to prepare the submission.";
+    const firstSelected = Boolean(imageSlots.one.file);
+    const secondSelected = Boolean(imageSlots.two.file);
+    const categorySelected = Boolean(selectedAnalysisCategory);
+    if (submitAnalysisImage) {
+        submitAnalysisImage.disabled =
+            !firstSelected || !secondSelected || !categorySelected || analysisSubmissionInProgress;
+    }
+
+    if (!imageAnalysisStatus) return;
+    if (!firstSelected) {
+        imageAnalysisStatus.textContent = "Select the first image before submitting.";
+    } else if (!secondSelected) {
+        imageAnalysisStatus.textContent = "Select the second image before submitting.";
+    } else if (!categorySelected) {
+        imageAnalysisStatus.textContent =
+            "Choose a Flood, Drought, or Vegetation monitoring category before submitting.";
+    } else {
+        imageAnalysisStatus.textContent =
+            "Both images are ready for " + selectedAnalysisCategory + " monitoring.";
     }
 }
 
@@ -1250,11 +1374,13 @@ function clearImageSlot(key) {
     const slot = imageSlots[key];
     if (!slot) return;
 
+    slot.previewRequestId += 1;
     if (slot.objectUrl) URL.revokeObjectURL(slot.objectUrl);
     slot.objectUrl = null;
     slot.file = null;
     slot.input.value = "";
     slot.preview.removeAttribute("src");
+    slot.preview.hidden = false;
     slot.panel.hidden = true;
     slot.name.textContent = "";
     slot.size.textContent = "";
@@ -1264,12 +1390,14 @@ function clearImageSlot(key) {
 Object.keys(imageSlots).forEach(function (key) {
     const slot = imageSlots[key];
     slot.input.accept = ".tif,.tiff,.png,.jpg,.jpeg,.bmp,.webp";
-    slot.input.addEventListener("change", function () {
+    slot.input.addEventListener("change", async function () {
         const file = slot.input.files && slot.input.files[0];
+        const previewRequestId = ++slot.previewRequestId;
         if (slot.objectUrl) URL.revokeObjectURL(slot.objectUrl);
         slot.objectUrl = null;
         slot.file = null;
         slot.preview.removeAttribute("src");
+        slot.preview.hidden = false;
         slot.panel.hidden = true;
 
         if (!file) {
@@ -1302,12 +1430,32 @@ Object.keys(imageSlots).forEach(function (key) {
         }
 
         slot.file = file;
-        slot.objectUrl = URL.createObjectURL(file);
-        slot.preview.src = slot.objectUrl;
         slot.name.textContent = file.name;
         slot.size.textContent = (file.size / (1024 * 1024)).toFixed(2) + " MB";
         slot.panel.hidden = false;
         updateImagePairStatus();
+
+        const selectedExtension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+        if (selectedExtension === ".tif" || selectedExtension === ".tiff") {
+            imageAnalysisStatus.textContent = "Generating a browser preview for the TIFF…";
+            try {
+                const preview = await createTiffPreview(file);
+                if (slot.previewRequestId !== previewRequestId || slot.file !== file) return;
+                slot.objectUrl = URL.createObjectURL(preview);
+                slot.preview.src = slot.objectUrl;
+                updateImagePairStatus();
+            } catch (error) {
+                if (slot.previewRequestId !== previewRequestId || slot.file !== file) return;
+                console.warn("Could not generate TIFF preview:", error);
+                slot.preview.hidden = true;
+                imageAnalysisStatus.textContent =
+                    "The TIFF preview is unavailable, but the original file can still be submitted.";
+            }
+            return;
+        }
+
+        slot.objectUrl = URL.createObjectURL(file);
+        slot.preview.src = slot.objectUrl;
     });
 });
 
@@ -1317,11 +1465,25 @@ document.querySelectorAll("[data-clear-image]").forEach(function (button) {
     });
 });
 
+analysisCategoryInputs.forEach(function (input) {
+    input.addEventListener("change", function () {
+        if (input.checked) selectedAnalysisCategory = input.value;
+        updateImagePairStatus();
+    });
+});
+
 if (imageAnalysisForm) {
     imageAnalysisForm.addEventListener("submit", async function (event) {
         event.preventDefault();
-        if (!imageSlots.one.file || !imageSlots.two.file) return;
-        if (!currentCategory) {
+        if (!imageSlots.one.file) {
+            imageAnalysisStatus.textContent = "Select the first image before submitting.";
+            return;
+        }
+        if (!imageSlots.two.file) {
+            imageAnalysisStatus.textContent = "Select the second image before submitting.";
+            return;
+        }
+        if (!selectedAnalysisCategory) {
             imageAnalysisStatus.textContent =
                 "Choose a Flood, Drought, or Vegetation monitoring category before submitting.";
             return;
@@ -1330,9 +1492,10 @@ if (imageAnalysisForm) {
         const formData = new FormData();
         formData.append("historical", imageSlots.one.file);
         formData.append("recent", imageSlots.two.file);
-        formData.append("hazard", currentCategory);
+        formData.append("hazard", selectedAnalysisCategory);
         if (currentLocation) formData.append("location", currentLocation.name);
 
+        analysisSubmissionInProgress = true;
         submitAnalysisImage.disabled = true;
         imageAnalysisStatus.textContent = "Uploading the image pair and running the model…";
         try {
@@ -1353,11 +1516,14 @@ if (imageAnalysisForm) {
         } catch (error) {
             imageAnalysisStatus.textContent = error.message;
         } finally {
-            submitAnalysisImage.disabled = !imageSlots.one.file || !imageSlots.two.file;
+            analysisSubmissionInProgress = false;
+            submitAnalysisImage.disabled =
+                !imageSlots.one.file || !imageSlots.two.file || !selectedAnalysisCategory;
         }
     });
 }
 
+updateImagePairStatus();
 checkBackendStatus();
 refreshHistory();
 

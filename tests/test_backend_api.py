@@ -52,6 +52,29 @@ class BackendApiTests(unittest.TestCase):
             response.headers["Access-Control-Allow-Headers"].lower(),
         )
 
+    def test_cors_preflight_allows_production_frontend(self):
+        origin = "https://geolens-r130rnnhw-samantakoushik742-uxs-projects.vercel.app"
+        response = self.client.options(
+            "/api/analyze",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Access-Control-Allow-Origin"], origin)
+        allowed_methods = {
+            method.strip()
+            for method in response.headers["Access-Control-Allow-Methods"].split(",")
+        }
+        self.assertTrue({"GET", "POST", "OPTIONS"}.issubset(allowed_methods))
+        self.assertIn(
+            "content-type",
+            response.headers["Access-Control-Allow-Headers"].lower(),
+        )
+
     def test_cors_rejects_unconfigured_origin(self):
         response = self.client.options(
             "/api/analyze",
@@ -136,6 +159,51 @@ class BackendApiTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         self.assertEqual(payload["prediction"], "flood")
         self.assertEqual(payload["class_probabilities"]["flood"], 0.9)
+
+    def test_analyze_preserves_each_selected_hazard(self):
+        def image_file(name):
+            output = io.BytesIO()
+            Image.new("RGB", (8, 8), color="green").save(output, format="PNG")
+            output.seek(0)
+            return (output, name)
+
+        result = {
+            "predicted_class": "flood",
+            "confidence": 0.9,
+            "class_probabilities": {
+                "flood": 0.9,
+                "drought": 0.05,
+                "vegetation": 0.05,
+            },
+            "change_index": 0.2,
+            "interpretation": "Test result",
+            "input_channels": 3,
+            "image_size": 256,
+            "class_names": ["vegetation", "drought", "flood"],
+        }
+
+        for hazard in backend.HAZARDS:
+            with self.subTest(hazard=hazard), tempfile.TemporaryDirectory() as upload_dir:
+                with (
+                    patch.object(backend, "UPLOAD_DIR", Path(upload_dir)),
+                    patch.object(backend, "model_status", return_value={"available": True}),
+                    patch.object(backend, "run_pair_inference", return_value=result),
+                    patch.object(backend, "save_history_record") as save_history,
+                    patch.object(backend, "encode_preview", return_value=None),
+                ):
+                    response = self.client.post(
+                        "/api/analyze",
+                        data={
+                            "historical": image_file("old.png"),
+                            "recent": image_file("new.png"),
+                            "hazard": hazard,
+                        },
+                        content_type="multipart/form-data",
+                    )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.get_json()["hazard"], hazard)
+                self.assertEqual(save_history.call_args.args[0]["hazard"], hazard)
 
     def test_analyze_returns_service_unavailable_when_model_is_missing(self):
         def image_file(name):

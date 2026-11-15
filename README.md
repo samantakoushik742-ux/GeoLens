@@ -61,7 +61,7 @@ The frontend is plain HTML/CSS/JavaScript. Configure Vercel with `frontend/` as 
 
 ```javascript
 window.GEOLENS_API = {
-    BASE_URL: "https://YOUR-RENDER-SERVICE.onrender.com"
+    BASE_URL: "https://geolens-jc7x.onrender.com"
 };
 ```
 
@@ -78,7 +78,7 @@ Render supplies `PORT`. Set these service environment variables:
 | Variable | Value |
 | --- | --- |
 | `HOST` | `0.0.0.0` |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated production Vercel origin and any fixed local development origins |
+| `CORS_ALLOWED_ORIGINS` | `https://geolens-r130rnnhw-samantakoushik742-uxs-projects.vercel.app` plus any fixed local development origins |
 | `CORS_ALLOWED_ORIGIN_REGEX` | Optional regex restricted to this project's Vercel preview URLs |
 | `MYSQL_HOST` | Aiven service hostname |
 | `MYSQL_PORT` | Aiven service port |

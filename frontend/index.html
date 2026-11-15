@@ -512,6 +512,24 @@
                     </div>
                 </div>
 
+                <fieldset class="image-analysis-category" aria-describedby="imageAnalysisStatus" aria-required="true">
+                    <legend>Monitoring category</legend>
+                    <div class="image-analysis-category-options">
+                        <label class="image-analysis-category-option" data-category="flood">
+                            <input type="radio" name="analysisCategory" value="flood">
+                            <span>Flood Monitoring</span>
+                        </label>
+                        <label class="image-analysis-category-option" data-category="drought">
+                            <input type="radio" name="analysisCategory" value="drought">
+                            <span>Drought Monitoring</span>
+                        </label>
+                        <label class="image-analysis-category-option" data-category="vegetation">
+                            <input type="radio" name="analysisCategory" value="vegetation">
+                            <span>Vegetation Monitoring</span>
+                        </label>
+                    </div>
+                </fieldset>
+
                 <div class="image-analysis-actions">
                     <button id="submitAnalysisImage" class="image-submit-button" type="submit" disabled>Submit image pair</button>
                     <p id="imageAnalysisStatus" class="image-analysis-status" role="status" aria-live="polite">Select both images to prepare the submission.</p>

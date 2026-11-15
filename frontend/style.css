@@ -2877,6 +2877,79 @@ p {
     font-size: 10px;
 }
 
+.image-analysis-category {
+    display: grid;
+    gap: 9px;
+    min-width: 0;
+    margin: 16px 0 0;
+    padding: 0;
+    border: 0;
+}
+
+.image-analysis-category legend {
+    margin-bottom: 1px;
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.image-analysis-category-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.image-analysis-category-option {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+    min-height: 42px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    color: var(--text-secondary);
+    background: var(--background);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.image-analysis-category-option[data-category="flood"] {
+    --category-option-accent: var(--flood);
+    --category-option-tint: var(--flood-soft);
+}
+
+.image-analysis-category-option[data-category="drought"] {
+    --category-option-accent: var(--drought);
+    --category-option-tint: var(--drought-soft);
+}
+
+.image-analysis-category-option[data-category="vegetation"] {
+    --category-option-accent: var(--vegetation);
+    --category-option-tint: var(--vegetation-soft);
+}
+
+.image-analysis-category-option input {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+    margin: 0;
+    accent-color: var(--category-option-accent, var(--analysis));
+}
+
+.image-analysis-category-option:has(input:checked) {
+    border-color: var(--category-option-accent, var(--analysis));
+    color: var(--text-primary);
+    background: var(--category-option-tint, var(--surface-soft));
+}
+
+.image-analysis-category-option:focus-within {
+    outline: 2px solid var(--category-option-accent, var(--analysis));
+    outline-offset: 3px;
+}
+
 .image-clear-button {
     padding: 8px 10px;
     border: 1px solid var(--border);
