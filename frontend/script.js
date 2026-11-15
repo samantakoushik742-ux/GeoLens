@@ -222,6 +222,7 @@ const analysisHomeLink = document.querySelector("#analysisHomeLink");
 const backToHome = document.querySelector("#backToHome");
 
 let currentCategory = null;
+let currentLocation = null;
 
 /* ==========================================
    THEME TOGGLE
@@ -901,6 +902,8 @@ function openCategory(category) {
     if (eyebrow) eyebrow.textContent = info.eyebrow;
 
     currentCategory = category;
+    currentLocation = null;
+    updateImagePairStatus();
     renderLocationList(category);
 
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -986,6 +989,8 @@ function openLocationAnalysis(category, location) {
     }
 
     currentCategory = category;
+    currentLocation = location;
+    updateImagePairStatus();
 
     const title = document.querySelector("#analysisLocationTitle");
     const region = document.querySelector("#analysisLocationRegion");
@@ -1080,12 +1085,23 @@ initializeMap();
 
 
 /* ==========================================
-   IMAGE ANALYSIS FRONTEND PLACEHOLDER
+   IMAGE ANALYSIS API
 ========================================== */
 
 const imageAnalysisForm = document.querySelector("#imageAnalysisForm");
 const submitAnalysisImage = document.querySelector("#submitAnalysisImage");
 const imageAnalysisStatus = document.querySelector("#imageAnalysisStatus");
+const integrationBadge = document.querySelector(".integration-badge");
+const integrationNote = document.querySelector(".integration-note");
+const analysisHistoryList = document.querySelector("#analysisHistoryList");
+const apiBaseUrl = (
+    window.GEOLENS_API && typeof window.GEOLENS_API.BASE_URL === "string"
+        ? window.GEOLENS_API.BASE_URL
+        : ""
+).replace(/\/+$/, "");
+const localFrontendHosts = ["", "localhost", "127.0.0.1", "::1"];
+const isLocalFrontend = localFrontendHosts.includes(window.location.hostname);
+
 const imageSlots = {
     one: {
         input: document.querySelector("#analysisImageInputOne"),
@@ -1107,11 +1123,124 @@ const imageSlots = {
     }
 };
 
+async function apiRequest(path, options) {
+    if (!apiBaseUrl && !isLocalFrontend) {
+        throw new Error("Production API URL is not configured. Set the Render URL in frontend/api-config.js.");
+    }
+
+    if (apiBaseUrl) {
+        let configuredUrl;
+        try {
+            configuredUrl = new URL(apiBaseUrl);
+        } catch (error) {
+            throw new Error("The configured backend URL is invalid.");
+        }
+        if (!["http:", "https:"].includes(configuredUrl.protocol)) {
+            throw new Error("The backend URL must use HTTP or HTTPS.");
+        }
+        if (configuredUrl.protocol !== "https:" && window.location.protocol === "https:") {
+            throw new Error("The deployed frontend requires an HTTPS backend URL.");
+        }
+        if (!isLocalFrontend && localFrontendHosts.includes(configuredUrl.hostname)) {
+            throw new Error("A production frontend cannot use a localhost backend URL.");
+        }
+    }
+
+    let response;
+    try {
+        response = await fetch(apiBaseUrl + path, options);
+    } catch (error) {
+        throw new Error("Could not reach the analysis service. Check the backend URL and network connection.");
+    }
+
+    let payload;
+    try {
+        payload = await response.json();
+    } catch (error) {
+        throw new Error("The backend returned an invalid response. Check its URL and deployment logs.");
+    }
+
+    if (!response.ok) {
+        throw new Error(payload.message || payload.error || "Request failed with HTTP " + response.status + ".");
+    }
+    return payload;
+}
+
+function refreshHistory() {
+    return apiRequest("/api/history")
+        .then(function (payload) {
+            const records = Array.isArray(payload.records) ? payload.records : [];
+            if (!analysisHistoryList || !records.length) return;
+
+            const heading = document.createElement("h3");
+            heading.textContent = "Recent analyses";
+            const list = document.createElement("ol");
+            list.className = "analysis-history-items";
+
+            records.forEach(function (record) {
+                const item = document.createElement("li");
+                const result = document.createElement("strong");
+                result.textContent = (record.hazard || "Analysis") + ": " +
+                    (record.prediction || "Result unavailable");
+                const details = document.createElement("p");
+                const timestamp = new Date(record.timestamp);
+                const date = record.timestamp && !Number.isNaN(timestamp.getTime())
+                    ? timestamp.toLocaleString()
+                    : "Date unavailable";
+                details.textContent = (record.location ? record.location + " · " : "") + date;
+                item.append(result, details);
+                list.append(item);
+            });
+
+            analysisHistoryList.replaceChildren(heading, list);
+        })
+        .catch(function (error) {
+            console.error("Could not load analysis history:", error);
+            if (analysisHistoryList) {
+                const message = document.createElement("p");
+                message.textContent = error.message;
+                analysisHistoryList.replaceChildren(message);
+            }
+        });
+}
+
+function checkBackendStatus() {
+    return apiRequest("/api/health")
+        .then(function (payload) {
+            const databaseConfigured = payload.database && payload.database.configured;
+            const databaseUnavailable = databaseConfigured && !payload.database.available;
+            const modelAvailable = payload.model && payload.model.available;
+            if (integrationBadge) {
+                integrationBadge.textContent = databaseUnavailable
+                    ? "DATABASE UNAVAILABLE"
+                    : !databaseConfigured
+                        ? "AIVEN DATABASE NOT CONFIGURED"
+                        : modelAvailable
+                            ? "ANALYSIS SERVICE CONNECTED"
+                            : "MODEL CHECKPOINT MISSING";
+            }
+            if (integrationNote) {
+                integrationNote.textContent = databaseUnavailable
+                    ? "The backend is reachable, but Aiven database connectivity is unavailable."
+                    : !databaseConfigured
+                        ? "The backend is reachable, but Aiven is not configured. Local history is stored in a JSON file."
+                    : payload.message ||
+                        "The backend is reachable, but its model status could not be confirmed.";
+            }
+        })
+        .catch(function (error) {
+            if (integrationBadge) integrationBadge.textContent = "ANALYSIS SERVICE UNAVAILABLE";
+            if (integrationNote) integrationNote.textContent = error.message;
+        });
+}
+
 function updateImagePairStatus() {
     const bothSelected = imageSlots.one.file && imageSlots.two.file;
     if (submitAnalysisImage) submitAnalysisImage.disabled = !bothSelected;
     if (imageAnalysisStatus && bothSelected) {
-        imageAnalysisStatus.textContent = "Both images are ready. The pair will not be uploaded until the backend is connected.";
+        imageAnalysisStatus.textContent = currentCategory
+            ? "Both images are ready to submit for " + currentCategory + " analysis."
+            : "Both images are ready. Choose a monitoring category before submitting.";
     } else if (imageAnalysisStatus) {
         imageAnalysisStatus.textContent = "Select both images to prepare the submission.";
     }
@@ -1134,6 +1263,7 @@ function clearImageSlot(key) {
 
 Object.keys(imageSlots).forEach(function (key) {
     const slot = imageSlots[key];
+    slot.input.accept = ".tif,.tiff,.png,.jpg,.jpeg,.bmp,.webp";
     slot.input.addEventListener("change", function () {
         const file = slot.input.files && slot.input.files[0];
         if (slot.objectUrl) URL.revokeObjectURL(slot.objectUrl);
@@ -1147,16 +1277,26 @@ Object.keys(imageSlots).forEach(function (key) {
             return;
         }
 
-        if (!file.type.startsWith("image/")) {
+        const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+        const supportedExtensions = [
+            ".tif",
+            ".tiff",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".bmp",
+            ".webp"
+        ];
+        if (!supportedExtensions.includes(extension)) {
             slot.input.value = "";
             imageAnalysisStatus.textContent = "Choose a supported image file for both image slots.";
             updateImagePairStatus();
             return;
         }
 
-        if (file.size > 10 * 1024 * 1024) {
+        if (file.size > 50 * 1024 * 1024) {
             slot.input.value = "";
-            imageAnalysisStatus.textContent = "Each image must be 10 MB or smaller.";
+            imageAnalysisStatus.textContent = "Each image must be 50 MB or smaller.";
             updateImagePairStatus();
             return;
         }
@@ -1178,14 +1318,48 @@ document.querySelectorAll("[data-clear-image]").forEach(function (button) {
 });
 
 if (imageAnalysisForm) {
-    imageAnalysisForm.addEventListener("submit", function (event) {
+    imageAnalysisForm.addEventListener("submit", async function (event) {
         event.preventDefault();
         if (!imageSlots.one.file || !imageSlots.two.file) return;
+        if (!currentCategory) {
+            imageAnalysisStatus.textContent =
+                "Choose a Flood, Drought, or Vegetation monitoring category before submitting.";
+            return;
+        }
 
-        imageAnalysisStatus.textContent =
-            "Backend not connected. Neither image was uploaded and no analysis was generated.";
+        const formData = new FormData();
+        formData.append("historical", imageSlots.one.file);
+        formData.append("recent", imageSlots.two.file);
+        formData.append("hazard", currentCategory);
+        if (currentLocation) formData.append("location", currentLocation.name);
+
+        submitAnalysisImage.disabled = true;
+        imageAnalysisStatus.textContent = "Uploading the image pair and running the model…";
+        try {
+            const result = await apiRequest("/api/analyze", {
+                method: "POST",
+                body: formData
+            });
+            const confidence = typeof result.confidence === "number"
+                ? " (" + (result.confidence * 100).toFixed(1) + "% class confidence)"
+                : "";
+            const summary = result.message ||
+                "Prediction: " + (result.predicted_class || result.prediction || "complete") + confidence;
+            imageAnalysisStatus.textContent =
+                summary + (!result.message && result.change_index != null
+                    ? " Change index: " + Number(result.change_index).toFixed(2) + "."
+                    : "");
+            await refreshHistory();
+        } catch (error) {
+            imageAnalysisStatus.textContent = error.message;
+        } finally {
+            submitAnalysisImage.disabled = !imageSlots.one.file || !imageSlots.two.file;
+        }
     });
 }
+
+checkBackendStatus();
+refreshHistory();
 
 
 

@@ -37,7 +37,7 @@ IMAGE_EXTENSIONS = {
 
 
 def connect_mysql():
-    required = ("MYSQL_HOST", "MYSQL_USER", "MYSQL_DATABASE")
+    required = ("MYSQL_HOST", "MYSQL_USER", "MYSQL_DATABASE", "MYSQL_SSL_CA")
     missing = [key for key in required if os.getenv(key) in (None, "")]
     if missing:
         raise RuntimeError(f"Missing MySQL environment variables: {', '.join(missing)}")
@@ -48,6 +48,9 @@ def connect_mysql():
     except ValueError as exc:
         raise RuntimeError(f"Invalid MYSQL_PORT value: {port_value!r}") from exc
 
+    if not 1 <= port <= 65535:
+        raise RuntimeError(f"Invalid MYSQL_PORT value: {port_value!r}")
+
     config = {
         "host": os.environ["MYSQL_HOST"],
         "port": port,
@@ -56,9 +59,11 @@ def connect_mysql():
         "database": os.environ["MYSQL_DATABASE"],
         "connection_timeout": 20,
     }
-    ssl_ca = os.getenv("MYSQL_SSL_CA")
-    if ssl_ca:
-        config.update(ssl_ca=ssl_ca, ssl_verify_cert=True, ssl_verify_identity=True)
+    config.update(
+        ssl_ca=os.environ["MYSQL_SSL_CA"],
+        ssl_verify_cert=True,
+        ssl_verify_identity=True
+    )
     return mysql.connector.connect(**config)
 
 

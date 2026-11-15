@@ -1,6 +1,7 @@
 
 from pathlib import Path
 import argparse
+import os
 
 import numpy as np
 import torch
@@ -23,11 +24,12 @@ from preprocessing.satellite_preprocess import (
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-DEFAULT_MODEL = (
-    PROJECT_ROOT /
-    "models" /
-    "best_multi_hazard_cnn.pth"
-)
+DEFAULT_MODEL = Path(
+    os.getenv("GEOLENS_MODEL_PATH")
+    or PROJECT_ROOT / "models" / "best_multi_hazard_cnn.pth"
+).expanduser()
+if not DEFAULT_MODEL.is_absolute():
+    DEFAULT_MODEL = PROJECT_ROOT / DEFAULT_MODEL
 
 EXPECTED_CLASSES = [
     "vegetation",

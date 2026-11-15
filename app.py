@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import socket
 import sys
 import traceback
@@ -16,11 +17,19 @@ from werkzeug.utils import secure_filename
 
 from config import (
     ALLOWED_EXTENSIONS,
+    CORS_ALLOWED_ORIGIN_REGEX,
+    CORS_ALLOWED_ORIGINS,
     HAZARDS,
     HOST,
     MAX_CONTENT_LENGTH,
     MAX_UPLOAD_BYTES,
     PORT,
+)
+from database_ingestion.history_store import (
+    database_status,
+    is_database_configured,
+    load_records,
+    save_record,
 )
 from predict import DEFAULT_MODEL, EXPECTED_CLASSES, run_pair_inference
 
@@ -36,6 +45,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("geolens")
 
+cors_origins = list(CORS_ALLOWED_ORIGINS)
+if CORS_ALLOWED_ORIGIN_REGEX:
+    cors_origins.append(re.compile(CORS_ALLOWED_ORIGIN_REGEX, re.IGNORECASE))
+
 app = Flask(
     __name__,
     static_folder=str(FRONTEND_DIR),
@@ -44,7 +57,14 @@ app = Flask(
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 CORS(
     app,
-    resources={r"/api/*": {"origins": "*"}}
+    resources={
+        r"/api/*": {
+            "origins": cors_origins,
+            "methods": ["GET", "POST", "OPTIONS"],
+            "allow_headers": ["Content-Type"],
+            "max_age": 600,
+        }
+    }
 )
 
 
@@ -67,10 +87,10 @@ def allowed_file(filename):
 
 
 def model_status():
-    exists = DEFAULT_MODEL.exists()
+    exists = DEFAULT_MODEL.is_file()
     return {
         "available": exists,
-        "path": str(DEFAULT_MODEL),
+        "path": DEFAULT_MODEL.name,
         "architecture": "TemporalDisasterCNN",
         "classes": list(EXPECTED_CLASSES),
         "separate_models": {
@@ -87,6 +107,9 @@ def model_status():
 
 
 def load_history():
+    if is_database_configured():
+        return load_records()
+
     if not HISTORY_FILE.exists():
         return []
 
@@ -95,13 +118,16 @@ def load_history():
             records = json.load(file)
         if isinstance(records, list):
             return records
+        raise RuntimeError("Analysis history must contain a JSON list.")
     except (OSError, json.JSONDecodeError) as error:
-        logger.error("Could not read analysis history: %s", error)
-
-    return []
+        raise RuntimeError("Could not read local analysis history.") from error
 
 
 def save_history_record(record):
+    if is_database_configured():
+        save_record(record)
+        return
+
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
     records = load_history()
@@ -228,6 +254,7 @@ def selected_hazard_message(hazard, predicted_class, confidence, change_index):
 @app.get("/api/health")
 def health():
     status = model_status()
+    database = database_status()
     message = (
         "Backend is running and the trained checkpoint is available."
         if status["available"]
@@ -239,9 +266,9 @@ def health():
     return jsonify({
         "success": True,
         "status": "ok",
-        "host": HOST,
-        "port": PORT,
+        "service": "GeoLens Backend",
         "model": status,
+        "database": database,
         "message": message
     })
 
@@ -266,10 +293,17 @@ def capabilities():
 
 @app.get("/api/history")
 def history():
-    return jsonify({
-        "success": True,
-        "records": load_history()
-    })
+    try:
+        records = load_history()
+    except (RuntimeError, OSError) as error:
+        logger.error("Analysis history storage failed: %s", error)
+        return json_error(
+            "History storage unavailable",
+            "Could not read analysis history. Check the Aiven database configuration.",
+            503
+        )
+
+    return jsonify({"success": True, "records": records})
 
 
 @app.post("/api/analyze")
@@ -300,8 +334,8 @@ def analyze():
     if not status["available"]:
         return json_error(
             "Trained model not found",
-            "No checkpoint exists at models/best_multi_hazard_cnn.pth. "
-            "Prepare the dataset, then run: python train.py",
+            "The trained checkpoint is not available on the backend. "
+            "Configure GEOLENS_MODEL_PATH or deploy models/best_multi_hazard_cnn.pth.",
             503
         )
 
@@ -318,7 +352,12 @@ def analyze():
             recent_path
         )
     except FileNotFoundError as error:
-        return json_error("Model loading failed", str(error), 503)
+        logger.error("Model loading failed: %s", error)
+        return json_error(
+            "Model loading failed",
+            "The trained checkpoint is unavailable on the backend.",
+            503
+        )
     except ValueError as error:
         logger.error("Preprocessing or validation error:\n%s", traceback.format_exc())
         return json_error(
@@ -377,7 +416,7 @@ def analyze():
         "timestamp": utc_now()
     }
 
-    save_history_record({
+    history_record = {
         "id": uuid.uuid4().hex,
         "timestamp": payload["timestamp"],
         "hazard": hazard,
@@ -389,7 +428,17 @@ def analyze():
         "historical_image": historical_name,
         "recent_image": recent_name,
         "message": payload["message"]
-    })
+    }
+    try:
+        save_history_record(history_record)
+    except (RuntimeError, OSError) as error:
+        logger.error("Could not save analysis history: %s", error)
+        return json_error(
+            "History storage unavailable",
+            "The analysis completed, but its result could not be saved. "
+            "Check the configured history storage.",
+            503
+        )
 
     return jsonify(payload)
 
@@ -458,8 +507,9 @@ def main():
 
     print("=" * 70)
     print("GeoLens backend")
-    print(f"URL: http://{HOST}:{PORT}")
-    print(f"API health: http://{HOST}:{PORT}/api/health")
+    display_host = "127.0.0.1" if HOST == "0.0.0.0" else HOST
+    print(f"URL: http://{display_host}:{PORT}")
+    print(f"API health: http://{display_host}:{PORT}/api/health")
     print(f"Model: {DEFAULT_MODEL}")
     print(
         "Model status: "
